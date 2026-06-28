@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-06-28T22:56:21.259Z",
+  "lastUpdated": "2026-06-28T23:03:54.734Z",
   "vslSubmissions": {
     "total": 138,
     "last4Weeks": 133,
@@ -26,8 +26,8 @@
     "prior4Weeks": 9
   },
   "upcomingCalls": 0,
-  "noShows": 0,
-  "notAFits": 0,
+  "noShows": 69,
+  "notAFits": 10,
   "canceledTotal": 80,
   "canceledLast4Weeks": 56,
   "canceledPrior4Weeks": 17,
