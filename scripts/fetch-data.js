@@ -1,11 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * fetch-data.js
- * Fetches sales pipeline data from Go High Level (GHL) API v2
- * and writes the result to data.json for the GitHub Pages dashboard.
- */
-
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -14,48 +8,35 @@ const API_KEY = process.env.GHL_API_KEY;
 const BASE_URL = 'services.leadconnectorhq.com';
 const LOCATION_ID = 'KXjUx7xQ9u08VIUK4hNk';
 
-const FORM_VSL     = 'NW4NyHJWgWuOcPquUTPs'; // Book a Call (Skyler's) — VSL
+const FORM_VSL     = 'NW4NyHJWgWuOcPquUTPs'; // Book a Call (Skyler's) — VSL survey
 const FORM_CONTACT = 'hAzymKnmEvJBNj7iO7ab'; // UPLVL Work w/Us Form — Contact Page
 
-if (!API_KEY) {
-  console.error('ERROR: GHL_API_KEY environment variable is not set.');
-  process.exit(1);
-}
+if (!API_KEY) { console.error('ERROR: GHL_API_KEY not set.'); process.exit(1); }
 
 // ─── Date windows ─────────────────────────────────────────────────────────────
-
-const now      = new Date();
-const MS_28    = 28 * 24 * 60 * 60 * 1000;
-const cut28    = new Date(now.getTime() - MS_28);      // 28 days ago
-const cut56    = new Date(now.getTime() - 2 * MS_28); // 56 days ago
+const now   = new Date();
+const MS_28 = 28 * 24 * 60 * 60 * 1000;
+const cut28 = new Date(now.getTime() - MS_28);
+const cut56 = new Date(now.getTime() - 2 * MS_28);
 
 function inLast4Weeks(dateStr)  { const d = new Date(dateStr); return d >= cut28 && d <= now; }
 function inPrior4Weeks(dateStr) { const d = new Date(dateStr); return d >= cut56 && d < cut28; }
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
-
 function get(urlPath) {
   return new Promise((resolve, reject) => {
     const req = https.request(
-      {
-        hostname: BASE_URL,
-        path: urlPath,
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          Version: '2021-07-28',
-          Accept: 'application/json',
-        },
-      },
+      { hostname: BASE_URL, path: urlPath, method: 'GET',
+        headers: { Authorization: `Bearer ${API_KEY}`, Version: '2021-07-28', Accept: 'application/json' } },
       (res) => {
         let raw = '';
         res.on('data', (c) => { raw += c; });
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             try { resolve(JSON.parse(raw)); }
-            catch (e) { reject(new Error(`JSON parse error for ${urlPath}: ${e.message}`)); }
+            catch (e) { reject(new Error(`JSON parse error: ${e.message}`)); }
           } else {
-            reject(new Error(`HTTP ${res.statusCode} for ${urlPath}: ${raw.slice(0, 300)}`));
+            reject(new Error(`HTTP ${res.statusCode} for ${urlPath}: ${raw.slice(0, 200)}`));
           }
         });
       }
@@ -65,8 +46,7 @@ function get(urlPath) {
   });
 }
 
-// ─── Generic paginated fetcher ────────────────────────────────────────────────
-
+// ─── Paginated fetcher ────────────────────────────────────────────────────────
 async function fetchAll(buildUrl, extractBatch, label) {
   const all = [];
   let page = 1;
@@ -86,7 +66,14 @@ async function fetchAll(buildUrl, extractBatch, label) {
   return all;
 }
 
-// ─── Specific fetchers ────────────────────────────────────────────────────────
+// ─── Fetchers ─────────────────────────────────────────────────────────────────
+function fetchSurveySubmissions(surveyId) {
+  return fetchAll(
+    (p) => `/surveys/submissions?locationId=${LOCATION_ID}&surveyId=${surveyId}&page=${p}&limit=20`,
+    (r) => r.submissions || r.data?.submissions || [],
+    `survey:${surveyId}`
+  );
+}
 
 function fetchFormSubmissions(formId) {
   return fetchAll(
@@ -96,45 +83,53 @@ function fetchFormSubmissions(formId) {
   );
 }
 
-function fetchSurveySubmissions(surveyId) {
+// Fetch ALL opportunities for location, then filter client-side by stage name
+function fetchAllOpportunities() {
   return fetchAll(
-    (p) => `/surveys/submissions?locationId=${LOCATION_ID}&surveyId=${surveyId}&page=${p}&limit=20`,
-    (r) => r.submissions || r.data?.submissions || [],
-    `survey:${surveyId}`
-  );
-}
-
-function fetchOpportunitiesByStage(stageName) {
-  const enc = encodeURIComponent(stageName);
-  return fetchAll(
-    (p) => `/opportunities/search?location_id=${LOCATION_ID}&pipeline_stage_name=${enc}&limit=20&page=${p}`,
-    (r) => {
-      const opps = r.opportunities || r.data?.opportunities || [];
-      if (p === 1) console.log(`  [${stageName}] API keys: ${Object.keys(r).join(', ')}, count: ${opps.length}`);
-      return opps;
-    },
-    `stage:${stageName}`
-  );
-}
-
-function fetchLostOpportunities() {
-  return fetchAll(
-    (p) => `/opportunities/search?location_id=${LOCATION_ID}&status=lost&page=${p}&limit=20`,
+    (p) => `/opportunities/search?location_id=${LOCATION_ID}&limit=100&page=${p}`,
     (r) => r.opportunities || r.data?.opportunities || [],
-    'lost-opps'
+    'all-opps'
   );
 }
 
-function fetchCalendarEvents(startISO, endISO) {
+// Fetch lost reason definitions to map lostReasonId -> name
+async function fetchLostReasons() {
+  try {
+    const r = await get(`/opportunities/lost-reasons?locationId=${LOCATION_ID}`);
+    const reasons = r.lostReasons || r.data?.lostReasons || r.lost_reasons || [];
+    console.log(`  Lost reasons fetched: ${reasons.length}`);
+    if (reasons.length > 0) console.log(`  Sample: ${JSON.stringify(reasons[0])}`);
+    const map = {};
+    reasons.forEach((lr) => { map[lr.id] = (lr.name || lr.reason || '').toLowerCase(); });
+    return map;
+  } catch (err) {
+    console.error('  Warning: could not fetch lost reasons:', err.message);
+    return {};
+  }
+}
+
+// Fetch calendars to get IDs for appointment lookup
+async function fetchCalendarIds() {
+  try {
+    const r = await get(`/calendars/?locationId=${LOCATION_ID}`);
+    const cals = r.calendars || r.data?.calendars || [];
+    console.log(`  Calendars found: ${cals.length}`);
+    return cals.map((c) => c.id);
+  } catch (err) {
+    console.error('  Warning: could not fetch calendars:', err.message);
+    return [];
+  }
+}
+
+async function fetchAppointmentsForCalendar(calendarId, startISO, endISO) {
   return fetchAll(
-    (p) => `/calendars/events?locationId=${LOCATION_ID}&startTime=${encodeURIComponent(startISO)}&endTime=${encodeURIComponent(endISO)}&page=${p}&limit=20`,
+    (p) => `/calendars/events?locationId=${LOCATION_ID}&calendarId=${calendarId}&startTime=${encodeURIComponent(startISO)}&endTime=${encodeURIComponent(endISO)}&page=${p}&limit=20`,
     (r) => r.events || r.data?.events || [],
-    'calendar-events'
+    `cal:${calendarId}`
   );
 }
 
 // ─── Period stats ─────────────────────────────────────────────────────────────
-
 function periodStats(items, dateFn) {
   return {
     total:       items.length,
@@ -144,20 +139,19 @@ function periodStats(items, dateFn) {
 }
 
 const subDateFn = (s) => s.dateAdded || s.createdAt || s.date_added;
-const oppDateFn = (o) => o.dateAdded || o.createdAt || o.date_added;
+const oppDateFn = (o) => o.dateAdded || o.createdAt || o.date_added || o.lastStatusChangeAt;
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-
 async function main() {
   console.log('Starting GHL data fetch…\n');
 
   const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  // ── Form Submissions ──────────────────────────────────────────────────────
+  // ── Form/Survey Submissions ───────────────────────────────────────────────
   console.log('Fetching VSL survey submissions…');
   let vslSubs = await fetchSurveySubmissions(FORM_VSL);
   if (vslSubs.length === 0) {
-    console.log('  VSL survey returned 0, trying forms endpoint as fallback…');
+    console.log('  Falling back to forms endpoint…');
     vslSubs = await fetchFormSubmissions(FORM_VSL);
   }
   console.log(`  VSL: ${vslSubs.length} total`);
@@ -166,66 +160,69 @@ async function main() {
   const contactSubs = await fetchFormSubmissions(FORM_CONTACT);
   console.log(`  Contact: ${contactSubs.length} total`);
 
-  const vslStats     = periodStats(vslSubs,     subDateFn);
+  const vslStats     = periodStats(vslSubs, subDateFn);
   const contactStats = periodStats(contactSubs, subDateFn);
 
-  // Qualified = not disqualified, across both forms
-  const allSubs        = [...vslSubs, ...contactSubs];
-  const qualifiedSubs  = allSubs.filter((s) => s.status !== 'disqualified');
+  const allSubs       = [...vslSubs, ...contactSubs];
+  const qualifiedSubs = allSubs.filter((s) => s.status !== 'disqualified');
   const qualifiedStats = periodStats(qualifiedSubs, subDateFn);
 
-  // ── Pipeline: Call Booked ─────────────────────────────────────────────────
-  console.log('Fetching Call Booked stage…');
-  const callBookedOpps   = await fetchOpportunitiesByStage('Call Booked');
+  // ── All Opportunities (fetch once, filter by stage) ───────────────────────
+  console.log('Fetching all opportunities…');
+  const allOpps = await fetchAllOpportunities();
+  console.log(`  Total opps: ${allOpps.length}`);
+
+  // Log unique stage names to verify exact casing
+  const stageNames = [...new Set(allOpps.map((o) => o.pipelineStageName || o.pipeline_stage_name || o.stageId || ''))];
+  console.log(`  Stage names found: ${JSON.stringify(stageNames)}`);
+
+  const stageName = (o) => (o.pipelineStageName || o.pipeline_stage_name || '').toLowerCase();
+
+  const callBookedOpps = allOpps.filter((o) => stageName(o) === 'call booked');
+  const followUpOpps   = allOpps.filter((o) => stageName(o) === 'follow up');
+  const closedOpps     = allOpps.filter((o) => stageName(o) === 'closed' && o.status === 'won');
+  const lostOpps       = allOpps.filter((o) => o.status === 'lost');
+
+  console.log(`  Call Booked: ${callBookedOpps.length}, Follow Up: ${followUpOpps.length}, Closed(won): ${closedOpps.length}, Lost: ${lostOpps.length}`);
+
   const callsBookedStats = periodStats(callBookedOpps, oppDateFn);
-  console.log(`  Call Booked: ${callsBookedStats.total} total`);
+  const followingUp      = followUpOpps.length;
+  const closedStats      = periodStats(closedOpps, oppDateFn);
 
-  // ── Pipeline: Follow Up ───────────────────────────────────────────────────
-  console.log('Fetching Follow Up stage…');
-  const followUpOpps = await fetchOpportunitiesByStage('Follow Up');
-  const followingUp  = followUpOpps.length;
-  console.log(`  Follow Up: ${followingUp}`);
+  // ── Lost Reasons (map ID -> name) ─────────────────────────────────────────
+  console.log('Fetching lost reason definitions…');
+  const lostReasonMap = await fetchLostReasons();
 
-  // ── Pipeline: Closed (won) ────────────────────────────────────────────────
-  console.log('Fetching Closed stage…');
-  const closedOpps   = await fetchOpportunitiesByStage('Closed');
-  const wonOpps      = closedOpps.filter((o) => o.status === 'won');
-  const closedStats  = periodStats(wonOpps, oppDateFn);
-  console.log(`  Closed (won): ${closedStats.total} total`);
-
-  // ── Lost Opportunities ────────────────────────────────────────────────────
-  console.log('Fetching lost opportunities…');
-  const lostOpps = await fetchLostOpportunities();
-  console.log(`  Lost: ${lostOpps.length} total`);
-
-  // Debug: log first lost opp keys and lostReason variants to find correct field name
+  // Debug first few lost opps
   if (lostOpps.length > 0) {
-    const sample = lostOpps[0];
-    console.log(`  Lost opp sample keys: ${Object.keys(sample).join(', ')}`);
-    console.log(`  lostReason: ${JSON.stringify(sample.lostReason)}, lost_reason: ${JSON.stringify(sample.lost_reason)}, lostReasonId: ${JSON.stringify(sample.lostReasonId)}`);
+    const s = lostOpps[0];
+    console.log(`  Lost opp[0] lostReasonId: ${s.lostReasonId}, name via map: ${lostReasonMap[s.lostReasonId]}`);
   }
 
-  const getLostReason = (o) => (o.lostReason || o.lost_reason || o.lostReasonId || '').toString().toLowerCase();
-  const noShows  = lostOpps.filter((o) => getLostReason(o).includes('no show'));
-  const notAFits = lostOpps.filter((o) => getLostReason(o).includes('not a fit'));
+  const getLostReasonName = (o) => lostReasonMap[o.lostReasonId] || (o.lostReason || '').toLowerCase();
+  const noShows  = lostOpps.filter((o) => getLostReasonName(o).includes('no show'));
+  const notAFits = lostOpps.filter((o) => getLostReasonName(o).includes('not a fit'));
+  console.log(`  No Shows: ${noShows.length}, Not a Fits: ${notAFits.length}`);
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
   const canceledPrior4Weeks = lostOpps.filter((o) => inPrior4Weeks(oppDateFn(o))).length;
-  console.log(`  No Shows: ${noShows.length}, Not a Fits: ${notAFits.length}`);
 
   // ── Calendar Events ───────────────────────────────────────────────────────
-  console.log('Fetching upcoming calendar events…');
+  console.log('Fetching calendars…');
+  const calendarIds = await fetchCalendarIds();
   let upcomingCalls = 0;
-  try {
-    const events = await fetchCalendarEvents(now.toISOString(), thirtyDaysOut.toISOString());
-    upcomingCalls = events.filter((e) => {
-      const status = (e.status || e.appointmentStatus || '').toLowerCase();
-      const start  = new Date(e.startTime || e.start || 0);
-      return status === 'confirmed' && start > now;
-    }).length;
-    console.log(`  Upcoming confirmed: ${upcomingCalls}`);
-  } catch (err) {
-    console.error('  Warning: calendar events failed:', err.message);
+  for (const calId of calendarIds) {
+    try {
+      const events = await fetchAppointmentsForCalendar(calId, now.toISOString(), thirtyDaysOut.toISOString());
+      const confirmed = events.filter((e) => {
+        const status = (e.status || e.appointmentStatus || '').toLowerCase();
+        return status === 'confirmed';
+      }).length;
+      upcomingCalls += confirmed;
+      console.log(`  Calendar ${calId}: ${confirmed} confirmed upcoming`);
+    } catch (err) {
+      console.error(`  Warning calendar ${calId}:`, err.message);
+    }
   }
 
   // ── Write data.json ───────────────────────────────────────────────────────
@@ -246,11 +243,8 @@ async function main() {
 
   const outPath = path.join(__dirname, '..', 'data.json');
   fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
-  console.log(`\ndata.json written to ${outPath}`);
+  console.log(`\ndata.json written successfully`);
   console.log(JSON.stringify(output, null, 2));
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
