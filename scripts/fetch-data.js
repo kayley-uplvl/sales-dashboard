@@ -92,10 +92,31 @@ function fetchAllOpportunities() {
   );
 }
 
+// Fetch pipeline stages to map pipelineStageId -> stage name
+async function fetchPipelineStageMap() {
+  try {
+    const r = await get(`/opportunities/pipelines?locationId=${LOCATION_ID}`);
+    const pipelines = r.pipelines || r.data?.pipelines || [];
+    console.log(`  Pipelines found: ${pipelines.length}`);
+    const map = {};
+    pipelines.forEach((pl) => {
+      (pl.stages || []).forEach((st) => {
+        map[st.id] = (st.name || '').toLowerCase();
+      });
+    });
+    console.log(`  Stage map: ${JSON.stringify(map)}`);
+    return map;
+  } catch (err) {
+    console.error('  Warning: could not fetch pipelines:', err.message);
+    return {};
+  }
+}
+
 // Fetch lost reason definitions to map lostReasonId -> name
 async function fetchLostReasons() {
   try {
-    const r = await get(`/opportunities/lost-reasons?locationId=${LOCATION_ID}`);
+    // Try v2 endpoint
+    const r = await get(`/opportunities/lost-reasons/?locationId=${LOCATION_ID}`);
     const reasons = r.lostReasons || r.data?.lostReasons || r.lost_reasons || [];
     console.log(`  Lost reasons fetched: ${reasons.length}`);
     if (reasons.length > 0) console.log(`  Sample: ${JSON.stringify(reasons[0])}`);
@@ -172,16 +193,11 @@ async function main() {
   const allOpps = await fetchAllOpportunities();
   console.log(`  Total opps: ${allOpps.length}`);
 
-  // Log all keys and stage-related fields from first opp to find correct field name
-  if (allOpps.length > 0) {
-    const s = allOpps[0];
-    console.log(`  Opp keys: ${Object.keys(s).join(', ')}`);
-    console.log(`  Stage fields: pipelineStageName=${s.pipelineStageName}, pipeline_stage_name=${s.pipeline_stage_name}, stageId=${s.stageId}, pipelineStageId=${s.pipelineStageId}, stage=${s.stage}, name=${s.name}, status=${s.status}`);
-  }
-  const stageNames = [...new Set(allOpps.map((o) => o.pipelineStageName || o.pipeline_stage_name || o.stageId || ''))];
-  console.log(`  Stage names found: ${JSON.stringify(stageNames.slice(0, 10))}`);
+  // Fetch pipeline stage ID -> name map
+  console.log('Fetching pipeline stage map…');
+  const stageMap = await fetchPipelineStageMap();
 
-  const stageName = (o) => (o.pipelineStageName || o.pipeline_stage_name || '').toLowerCase();
+  const stageName = (o) => stageMap[o.pipelineStageId] || '';
 
   const callBookedOpps = allOpps.filter((o) => stageName(o) === 'call booked');
   const followUpOpps   = allOpps.filter((o) => stageName(o) === 'follow up');
@@ -197,6 +213,7 @@ async function main() {
   // ── Lost Reasons (map ID -> name) ─────────────────────────────────────────
   console.log('Fetching lost reason definitions…');
   const lostReasonMap = await fetchLostReasons();
+  console.log(`  Lost reason map: ${JSON.stringify(lostReasonMap)}`);
 
   // Debug first few lost opps
   if (lostOpps.length > 0) {
