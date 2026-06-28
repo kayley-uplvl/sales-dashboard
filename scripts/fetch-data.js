@@ -75,6 +75,14 @@ function fetchSurveySubmissions(surveyId) {
   );
 }
 
+function fetchQualifiedSurveySubmissions(surveyId) {
+  return fetchAll(
+    (p) => `/surveys/submissions?locationId=${LOCATION_ID}&surveyId=${surveyId}&disqualified=false&page=${p}&limit=20`,
+    (r) => r.submissions || r.data?.submissions || [],
+    `survey-qualified:${surveyId}`
+  );
+}
+
 function fetchFormSubmissions(formId) {
   return fetchAll(
     (p) => `/forms/submissions?locationId=${LOCATION_ID}&formId=${formId}&page=${p}&limit=20`,
@@ -157,17 +165,10 @@ async function main() {
   }
   console.log(`  VSL total: ${vslSubs.length}`);
 
-  // Debug: log all keys and status-related fields from first few VSL submissions
-  if (vslSubs.length > 0) {
-    const s = vslSubs[0];
-    console.log(`  VSL sub[0] keys: ${Object.keys(s).join(', ')}`);
-    console.log(`  VSL sub[0] status=${s.status}, contactScore=${s.contactScore}, isDisqualified=${s.isDisqualified}, disqualified=${s.disqualified}, score=${s.score}`);
-    const statuses = [...new Set(vslSubs.map((s) => s.status))];
-    console.log(`  All VSL statuses: ${JSON.stringify(statuses)}`);
-  }
-  // GHL uses a boolean "disqualified" field on survey submissions (true = disqualified)
-  const vslQualified = vslSubs.filter((s) => s.disqualified !== true && s.disqualified !== 'true');
-  console.log(`  VSL qualified (not disqualified): ${vslQualified.length}`);
+  // Fetch qualified VSL submissions directly using disqualified=false filter
+  console.log('Fetching qualified VSL submissions (disqualified=false)…');
+  const vslQualified = await fetchQualifiedSurveySubmissions(SURVEY_VSL);
+  console.log(`  VSL qualified: ${vslQualified.length}`);
 
   // ── Contact Page Submissions ──────────────────────────────────────────────
   console.log('Fetching Contact Page form submissions…');
@@ -212,23 +213,14 @@ async function main() {
     console.log(`  lost[${i}] lostReasonId=${o.lostReasonId} name=${o.name} lostReason=${o.lostReason} status=${o.status}`);
   });
 
-  // Known lost reason IDs (identified from pipeline view):
-  // Two IDs found: 69eb9e24585ff476bde86691 and 69eb9e3d0dacd9a13e4c98fb
-  // Will determine mapping from logs — for now check both
-  const ID_A = '69eb9e24585ff476bde86691';
-  const ID_B = '69eb9e3d0dacd9a13e4c98fb';
-  const countA = lostOpps.filter((o) => o.lostReasonId === ID_A).length;
-  const countB = lostOpps.filter((o) => o.lostReasonId === ID_B).length;
-  console.log(`  ID_A count: ${countA}, ID_B count: ${countB}`);
+  // Lost reason IDs confirmed from GHL pipeline view:
+  // ID_A (69eb9e24585ff476bde86691) = Not a Fit (majority of lost opps)
+  // ID_B (69eb9e3d0dacd9a13e4c98fb) = No Show
+  const ID_NOT_A_FIT = '69eb9e24585ff476bde86691';
+  const ID_NO_SHOW   = '69eb9e3d0dacd9a13e4c98fb';
 
-  // From GHL UI: lost reasons are "Not a Fit" and "No Show"
-  // Try matching via lostReason text field as well
-  const noShowsCount  = lostOpps.filter((o) =>
-    o.lostReasonId === ID_A || (o.lostReason || '').toLowerCase().includes('no show')
-  ).length;
-  const notAFitsCount = lostOpps.filter((o) =>
-    o.lostReasonId === ID_B || (o.lostReason || '').toLowerCase().includes('not a fit')
-  ).length;
+  const noShowsCount  = lostOpps.filter((o) => o.lostReasonId === ID_NO_SHOW).length;
+  const notAFitsCount = lostOpps.filter((o) => o.lostReasonId === ID_NOT_A_FIT).length;
   console.log(`  No Shows: ${noShowsCount}, Not a Fits: ${notAFitsCount}`);
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
