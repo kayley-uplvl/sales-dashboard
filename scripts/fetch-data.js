@@ -96,11 +96,23 @@ function fetchFormSubmissions(formId) {
   );
 }
 
+function fetchSurveySubmissions(surveyId) {
+  return fetchAll(
+    (p) => `/surveys/submissions?locationId=${LOCATION_ID}&surveyId=${surveyId}&page=${p}&limit=20`,
+    (r) => r.submissions || r.data?.submissions || [],
+    `survey:${surveyId}`
+  );
+}
+
 function fetchOpportunitiesByStage(stageName) {
   const enc = encodeURIComponent(stageName);
   return fetchAll(
-    (p) => `/opportunities/search?location_id=${LOCATION_ID}&pipeline_stage_name=${enc}&page=${p}&limit=20`,
-    (r) => r.opportunities || r.data?.opportunities || [],
+    (p) => `/opportunities/search?location_id=${LOCATION_ID}&pipeline_stage_name=${enc}&limit=20&page=${p}`,
+    (r) => {
+      const opps = r.opportunities || r.data?.opportunities || [];
+      if (p === 1) console.log(`  [${stageName}] API keys: ${Object.keys(r).join(', ')}, count: ${opps.length}`);
+      return opps;
+    },
     `stage:${stageName}`
   );
 }
@@ -142,8 +154,12 @@ async function main() {
   const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   // ── Form Submissions ──────────────────────────────────────────────────────
-  console.log('Fetching VSL form submissions…');
-  const vslSubs = await fetchFormSubmissions(FORM_VSL);
+  console.log('Fetching VSL survey submissions…');
+  let vslSubs = await fetchSurveySubmissions(FORM_VSL);
+  if (vslSubs.length === 0) {
+    console.log('  VSL survey returned 0, trying forms endpoint as fallback…');
+    vslSubs = await fetchFormSubmissions(FORM_VSL);
+  }
   console.log(`  VSL: ${vslSubs.length} total`);
 
   console.log('Fetching Contact Page form submissions…');
@@ -182,8 +198,16 @@ async function main() {
   const lostOpps = await fetchLostOpportunities();
   console.log(`  Lost: ${lostOpps.length} total`);
 
-  const noShows  = lostOpps.filter((o) => (o.lostReason || '').toLowerCase().includes('no show'));
-  const notAFits = lostOpps.filter((o) => (o.lostReason || '').toLowerCase().includes('not a fit'));
+  // Debug: log first lost opp keys and lostReason variants to find correct field name
+  if (lostOpps.length > 0) {
+    const sample = lostOpps[0];
+    console.log(`  Lost opp sample keys: ${Object.keys(sample).join(', ')}`);
+    console.log(`  lostReason: ${JSON.stringify(sample.lostReason)}, lost_reason: ${JSON.stringify(sample.lost_reason)}, lostReasonId: ${JSON.stringify(sample.lostReasonId)}`);
+  }
+
+  const getLostReason = (o) => (o.lostReason || o.lost_reason || o.lostReasonId || '').toString().toLowerCase();
+  const noShows  = lostOpps.filter((o) => getLostReason(o).includes('no show'));
+  const notAFits = lostOpps.filter((o) => getLostReason(o).includes('not a fit'));
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
   const canceledPrior4Weeks = lostOpps.filter((o) => inPrior4Weeks(oppDateFn(o))).length;
