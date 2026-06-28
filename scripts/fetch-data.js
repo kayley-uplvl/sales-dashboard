@@ -157,13 +157,17 @@ async function main() {
   }
   console.log(`  VSL total: ${vslSubs.length}`);
 
-  // Qualified VSL = VSL submissions that were NOT disqualified
-  const vslQualified = vslSubs.filter((s) => s.status !== 'disqualified');
-  console.log(`  VSL qualified (not disqualified): ${vslQualified.length}`);
+  // Debug: log all keys and status-related fields from first few VSL submissions
   if (vslSubs.length > 0) {
+    const s = vslSubs[0];
+    console.log(`  VSL sub[0] keys: ${Object.keys(s).join(', ')}`);
+    console.log(`  VSL sub[0] status=${s.status}, contactScore=${s.contactScore}, isDisqualified=${s.isDisqualified}, disqualified=${s.disqualified}, score=${s.score}`);
     const statuses = [...new Set(vslSubs.map((s) => s.status))];
-    console.log(`  VSL submission statuses: ${JSON.stringify(statuses)}`);
+    console.log(`  All VSL statuses: ${JSON.stringify(statuses)}`);
   }
+  // GHL uses a boolean "disqualified" field on survey submissions (true = disqualified)
+  const vslQualified = vslSubs.filter((s) => s.disqualified !== true && s.disqualified !== 'true');
+  console.log(`  VSL qualified (not disqualified): ${vslQualified.length}`);
 
   // ── Contact Page Submissions ──────────────────────────────────────────────
   console.log('Fetching Contact Page form submissions…');
@@ -223,11 +227,18 @@ async function main() {
   let upcomingCalls = 0;
   for (const calId of calendarIds) {
     const events = await fetchAppointmentsForCalendar(calId, now.toISOString(), thirtyDaysOut.toISOString());
+    if (events.length > 0) {
+      const s = events[0];
+      console.log(`  Cal ${calId} event[0] keys: ${Object.keys(s).join(', ')}`);
+      console.log(`  Cal ${calId} event[0] status=${s.status}, appointmentStatus=${s.appointmentStatus}, appStatus=${s.appStatus}`);
+      const statuses = [...new Set(events.map(e => e.status || e.appointmentStatus || 'undefined'))];
+      console.log(`  Cal ${calId} all statuses: ${JSON.stringify(statuses)}`);
+    }
     const confirmed = events.filter((e) => {
-      const status = (e.status || e.appointmentStatus || '').toLowerCase();
-      return status === 'confirmed' || status === 'booked';
+      const status = (e.status || e.appointmentStatus || e.appStatus || '').toLowerCase();
+      return status === 'confirmed' || status === 'booked' || status === 'new';
     }).length;
-    if (confirmed > 0) console.log(`  Calendar ${calId}: ${confirmed} upcoming`);
+    if (confirmed > 0 || events.length > 0) console.log(`  Cal ${calId}: ${events.length} events, ${confirmed} confirmed`);
     upcomingCalls += confirmed;
   }
   console.log(`  Total upcoming confirmed: ${upcomingCalls}`);
