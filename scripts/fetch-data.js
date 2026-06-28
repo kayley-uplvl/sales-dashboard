@@ -8,7 +8,7 @@ const API_KEY = process.env.GHL_API_KEY;
 const BASE_URL = 'services.leadconnectorhq.com';
 const LOCATION_ID = 'KXjUx7xQ9u08VIUK4hNk';
 
-const FORM_VSL     = 'NW4NyHJWgWuOcPquUTPs'; // Book a Call (Skyler's) — VSL survey
+const SURVEY_VSL   = 'NW4NyHJWgWuOcPquUTPs'; // Book a Call (Skyler's) — VSL survey
 const FORM_CONTACT = 'hAzymKnmEvJBNj7iO7ab'; // UPLVL Work w/Us Form — Contact Page
 
 if (!API_KEY) { console.error('ERROR: GHL_API_KEY not set.'); process.exit(1); }
@@ -83,7 +83,6 @@ function fetchFormSubmissions(formId) {
   );
 }
 
-// Fetch ALL opportunities for location, then filter client-side by stage name
 function fetchAllOpportunities() {
   return fetchAll(
     (p) => `/opportunities/search?location_id=${LOCATION_ID}&limit=100&page=${p}`,
@@ -92,19 +91,15 @@ function fetchAllOpportunities() {
   );
 }
 
-// Fetch pipeline stages to map pipelineStageId -> stage name
 async function fetchPipelineStageMap() {
   try {
     const r = await get(`/opportunities/pipelines?locationId=${LOCATION_ID}`);
     const pipelines = r.pipelines || r.data?.pipelines || [];
-    console.log(`  Pipelines found: ${pipelines.length}`);
     const map = {};
     pipelines.forEach((pl) => {
-      (pl.stages || []).forEach((st) => {
-        map[st.id] = (st.name || '').toLowerCase();
-      });
+      (pl.stages || []).forEach((st) => { map[st.id] = (st.name || '').toLowerCase(); });
     });
-    console.log(`  Stage map: ${JSON.stringify(map)}`);
+    console.log(`  Stage map built: ${Object.keys(map).length} stages`);
     return map;
   } catch (err) {
     console.error('  Warning: could not fetch pipelines:', err.message);
@@ -112,24 +107,17 @@ async function fetchPipelineStageMap() {
   }
 }
 
-// Fetch lost reason definitions to map lostReasonId -> name
-async function fetchLostReasons() {
+// Fetch appointments for a calendar without pagination params (GHL doesn't support them)
+async function fetchAppointmentsForCalendar(calendarId, startISO, endISO) {
   try {
-    // Try v2 endpoint
-    const r = await get(`/opportunities/lost-reasons/?locationId=${LOCATION_ID}`);
-    const reasons = r.lostReasons || r.data?.lostReasons || r.lost_reasons || [];
-    console.log(`  Lost reasons fetched: ${reasons.length}`);
-    if (reasons.length > 0) console.log(`  Sample: ${JSON.stringify(reasons[0])}`);
-    const map = {};
-    reasons.forEach((lr) => { map[lr.id] = (lr.name || lr.reason || '').toLowerCase(); });
-    return map;
+    const r = await get(`/calendars/events?locationId=${LOCATION_ID}&calendarId=${calendarId}&startTime=${encodeURIComponent(startISO)}&endTime=${encodeURIComponent(endISO)}`);
+    return r.events || r.data?.events || [];
   } catch (err) {
-    console.error('  Warning: could not fetch lost reasons:', err.message);
-    return {};
+    console.error(`  Warning calendar ${calendarId}:`, err.message);
+    return [];
   }
 }
 
-// Fetch calendars to get IDs for appointment lookup
 async function fetchCalendarIds() {
   try {
     const r = await get(`/calendars/?locationId=${LOCATION_ID}`);
@@ -140,14 +128,6 @@ async function fetchCalendarIds() {
     console.error('  Warning: could not fetch calendars:', err.message);
     return [];
   }
-}
-
-async function fetchAppointmentsForCalendar(calendarId, startISO, endISO) {
-  return fetchAll(
-    (p) => `/calendars/events?locationId=${LOCATION_ID}&calendarId=${calendarId}&startTime=${encodeURIComponent(startISO)}&endTime=${encodeURIComponent(endISO)}&page=${p}&limit=20`,
-    (r) => r.events || r.data?.events || [],
-    `cal:${calendarId}`
-  );
 }
 
 // ─── Period stats ─────────────────────────────────────────────────────────────
@@ -168,45 +148,49 @@ async function main() {
 
   const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  // ── Form/Survey Submissions ───────────────────────────────────────────────
+  // ── VSL Survey Submissions ────────────────────────────────────────────────
   console.log('Fetching VSL survey submissions…');
-  let vslSubs = await fetchSurveySubmissions(FORM_VSL);
+  let vslSubs = await fetchSurveySubmissions(SURVEY_VSL);
   if (vslSubs.length === 0) {
     console.log('  Falling back to forms endpoint…');
-    vslSubs = await fetchFormSubmissions(FORM_VSL);
+    vslSubs = await fetchFormSubmissions(SURVEY_VSL);
   }
-  console.log(`  VSL: ${vslSubs.length} total`);
+  console.log(`  VSL total: ${vslSubs.length}`);
 
+  // Qualified VSL = VSL submissions that were NOT disqualified
+  const vslQualified = vslSubs.filter((s) => s.status !== 'disqualified');
+  console.log(`  VSL qualified (not disqualified): ${vslQualified.length}`);
+  if (vslSubs.length > 0) {
+    const statuses = [...new Set(vslSubs.map((s) => s.status))];
+    console.log(`  VSL submission statuses: ${JSON.stringify(statuses)}`);
+  }
+
+  // ── Contact Page Submissions ──────────────────────────────────────────────
   console.log('Fetching Contact Page form submissions…');
   const contactSubs = await fetchFormSubmissions(FORM_CONTACT);
-  console.log(`  Contact: ${contactSubs.length} total`);
+  console.log(`  Contact total: ${contactSubs.length}`);
 
-  const vslStats     = periodStats(vslSubs, subDateFn);
-  const contactStats = periodStats(contactSubs, subDateFn);
+  const vslStats          = periodStats(vslSubs, subDateFn);
+  const contactStats      = periodStats(contactSubs, subDateFn);
+  const vslQualifiedStats = periodStats(vslQualified, subDateFn);
 
-  const allSubs       = [...vslSubs, ...contactSubs];
-  const qualifiedSubs = allSubs.filter((s) => s.status !== 'disqualified');
-  const qualifiedStats = periodStats(qualifiedSubs, subDateFn);
+  // Total leads = all submissions across both forms
+  const allSubs      = [...vslSubs, ...contactSubs];
+  const totalLeadStats = periodStats(allSubs, subDateFn);
 
-  // ── All Opportunities (fetch once, filter by stage) ───────────────────────
+  // ── All Opportunities ─────────────────────────────────────────────────────
   console.log('Fetching all opportunities…');
   const allOpps = await fetchAllOpportunities();
   console.log(`  Total opps: ${allOpps.length}`);
 
-  // Fetch pipeline stage ID -> name map
   console.log('Fetching pipeline stage map…');
   const stageMap = await fetchPipelineStageMap();
-
   const stageName = (o) => stageMap[o.pipelineStageId] || '';
 
   const callBookedOpps = allOpps.filter((o) => stageName(o) === 'call booked');
   const followUpOpps   = allOpps.filter((o) => stageName(o) === 'follow up');
   const closedOpps     = allOpps.filter((o) => stageName(o) === 'closed' && o.status === 'won');
   const lostOpps       = allOpps.filter((o) => o.status === 'lost');
-  // No shows and not a fits tracked as pipeline stages
-  const noShowStageOpps  = allOpps.filter((o) => stageName(o).includes('no-show') || stageName(o).includes('no show'));
-  const notAFitStageOpps = allOpps.filter((o) => stageName(o).includes('not a fit') || stageName(o).includes('declined'));
-  console.log(`  No-show stage: ${noShowStageOpps.length}, Not-a-fit stage: ${notAFitStageOpps.length}`);
 
   console.log(`  Call Booked: ${callBookedOpps.length}, Follow Up: ${followUpOpps.length}, Closed(won): ${closedOpps.length}, Lost: ${lostOpps.length}`);
 
@@ -214,23 +198,20 @@ async function main() {
   const followingUp      = followUpOpps.length;
   const closedStats      = periodStats(closedOpps, oppDateFn);
 
-  // ── Lost Reasons (map ID -> name) ─────────────────────────────────────────
-  console.log('Fetching lost reason definitions…');
-  const lostReasonMap = await fetchLostReasons();
-  console.log(`  Lost reason map: ${JSON.stringify(lostReasonMap)}`);
+  // ── No Shows / Not a Fits ─────────────────────────────────────────────────
+  // Log all unique lostReasonIds to understand what IDs are in use
+  const lostReasonIds = [...new Set(lostOpps.map((o) => o.lostReasonId).filter(Boolean))];
+  console.log(`  Unique lostReasonIds: ${JSON.stringify(lostReasonIds)}`);
 
-  // Debug first few lost opps
-  if (lostOpps.length > 0) {
-    const s = lostOpps[0];
-    console.log(`  Lost opp[0] lostReasonId: ${s.lostReasonId}, name via map: ${lostReasonMap[s.lostReasonId]}`);
-  }
+  // Also check if any lost opps have stage names matching no-show / not a fit
+  const noShowStage  = allOpps.filter((o) => stageName(o).includes('no'));
+  const notAFitStage = allOpps.filter((o) => stageName(o).includes('declined') || stageName(o).includes('fit'));
+  console.log(`  Stages with 'no': ${[...new Set(noShowStage.map(o => stageName(o)))].join(', ')}`);
+  console.log(`  Stages with 'fit'/'declined': ${[...new Set(notAFitStage.map(o => stageName(o)))].join(', ')}`);
 
-  const getLostReasonName = (o) => lostReasonMap[o.lostReasonId] || (o.lostReason || '').toLowerCase();
-  const noShowsFromReason  = lostOpps.filter((o) => getLostReasonName(o).includes('no show'));
-  const notAFitsFromReason = lostOpps.filter((o) => getLostReasonName(o).includes('not a fit'));
-  // Combine stage-based and reason-based counts (deduplicated by using higher count)
-  const noShowsCount  = Math.max(noShowStageOpps.length,  noShowsFromReason.length);
-  const notAFitsCount = Math.max(notAFitStageOpps.length, notAFitsFromReason.length);
+  // For now count all lost as canceled; no-show/not-a-fit will be 0 until lost reasons API is resolved
+  const noShowsCount  = noShowStage.filter((o) => stageName(o) === 'no-show').length;
+  const notAFitsCount = notAFitStage.filter((o) => stageName(o) === 'declined / not a fit').length;
   console.log(`  No Shows: ${noShowsCount}, Not a Fits: ${notAFitsCount}`);
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
@@ -241,33 +222,32 @@ async function main() {
   const calendarIds = await fetchCalendarIds();
   let upcomingCalls = 0;
   for (const calId of calendarIds) {
-    try {
-      const events = await fetchAppointmentsForCalendar(calId, now.toISOString(), thirtyDaysOut.toISOString());
-      const confirmed = events.filter((e) => {
-        const status = (e.status || e.appointmentStatus || '').toLowerCase();
-        return status === 'confirmed';
-      }).length;
-      upcomingCalls += confirmed;
-      console.log(`  Calendar ${calId}: ${confirmed} confirmed upcoming`);
-    } catch (err) {
-      console.error(`  Warning calendar ${calId}:`, err.message);
-    }
+    const events = await fetchAppointmentsForCalendar(calId, now.toISOString(), thirtyDaysOut.toISOString());
+    const confirmed = events.filter((e) => {
+      const status = (e.status || e.appointmentStatus || '').toLowerCase();
+      return status === 'confirmed' || status === 'booked';
+    }).length;
+    if (confirmed > 0) console.log(`  Calendar ${calId}: ${confirmed} upcoming`);
+    upcomingCalls += confirmed;
   }
+  console.log(`  Total upcoming confirmed: ${upcomingCalls}`);
 
   // ── Write data.json ───────────────────────────────────────────────────────
   const output = {
-    lastUpdated:        now.toISOString(),
-    vslSubmissions:     vslStats,
-    contactSubmissions: contactStats,
-    qualifiedLeads:     qualifiedStats,
-    callsBooked:        callsBookedStats,
+    lastUpdated:          now.toISOString(),
+    vslSubmissions:       vslStats,
+    contactSubmissions:   contactStats,
+    totalLeads:           totalLeadStats,
+    qualifiedLeads:       vslQualifiedStats,  // VSL only, not disqualified
+    callsBooked:          callsBookedStats,
     upcomingCalls,
-    noShows:            noShowsCount,
-    notAFits:           notAFitsCount,
+    noShows:              noShowsCount,
+    notAFits:             notAFitsCount,
+    canceledTotal:        lostOpps.length,
     canceledLast4Weeks,
     canceledPrior4Weeks,
     followingUp,
-    closedSales:        closedStats,
+    closedSales:          closedStats,
   };
 
   const outPath = path.join(__dirname, '..', 'data.json');
