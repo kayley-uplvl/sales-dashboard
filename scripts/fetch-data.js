@@ -203,19 +203,32 @@ async function main() {
   const closedStats      = periodStats(closedOpps, oppDateFn);
 
   // ── No Shows / Not a Fits ─────────────────────────────────────────────────
-  // Log all unique lostReasonIds to understand what IDs are in use
+  // Log lost reason IDs + first lost opp details to identify which ID = which reason
   const lostReasonIds = [...new Set(lostOpps.map((o) => o.lostReasonId).filter(Boolean))];
   console.log(`  Unique lostReasonIds: ${JSON.stringify(lostReasonIds)}`);
 
-  // Also check if any lost opps have stage names matching no-show / not a fit
-  const noShowStage  = allOpps.filter((o) => stageName(o).includes('no'));
-  const notAFitStage = allOpps.filter((o) => stageName(o).includes('declined') || stageName(o).includes('fit'));
-  console.log(`  Stages with 'no': ${[...new Set(noShowStage.map(o => stageName(o)))].join(', ')}`);
-  console.log(`  Stages with 'fit'/'declined': ${[...new Set(notAFitStage.map(o => stageName(o)))].join(', ')}`);
+  // Log first 3 lost opps with their IDs and any text fields to identify the mapping
+  lostOpps.slice(0, 5).forEach((o, i) => {
+    console.log(`  lost[${i}] lostReasonId=${o.lostReasonId} name=${o.name} lostReason=${o.lostReason} status=${o.status}`);
+  });
 
-  // For now count all lost as canceled; no-show/not-a-fit will be 0 until lost reasons API is resolved
-  const noShowsCount  = noShowStage.filter((o) => stageName(o) === 'no-show').length;
-  const notAFitsCount = notAFitStage.filter((o) => stageName(o) === 'declined / not a fit').length;
+  // Known lost reason IDs (identified from pipeline view):
+  // Two IDs found: 69eb9e24585ff476bde86691 and 69eb9e3d0dacd9a13e4c98fb
+  // Will determine mapping from logs — for now check both
+  const ID_A = '69eb9e24585ff476bde86691';
+  const ID_B = '69eb9e3d0dacd9a13e4c98fb';
+  const countA = lostOpps.filter((o) => o.lostReasonId === ID_A).length;
+  const countB = lostOpps.filter((o) => o.lostReasonId === ID_B).length;
+  console.log(`  ID_A count: ${countA}, ID_B count: ${countB}`);
+
+  // From GHL UI: lost reasons are "Not a Fit" and "No Show"
+  // Try matching via lostReason text field as well
+  const noShowsCount  = lostOpps.filter((o) =>
+    o.lostReasonId === ID_A || (o.lostReason || '').toLowerCase().includes('no show')
+  ).length;
+  const notAFitsCount = lostOpps.filter((o) =>
+    o.lostReasonId === ID_B || (o.lostReason || '').toLowerCase().includes('not a fit')
+  ).length;
   console.log(`  No Shows: ${noShowsCount}, Not a Fits: ${notAFitsCount}`);
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
