@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UPLVL Sales Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0A0A0A;
+      --surface:      #141414;
+      --surface-2:    #1C1C1C;
+      --border:       #2A2A2A;
+      --accent:       #C8F135;
+      --accent-dim:   rgba(200, 241, 53, 0.10);
+      --accent-glow:  rgba(200, 241, 53, 0.18);
+      --text:         #FFFFFF;
+      --text-sec:     #888888;
+      --text-muted:   #555555;
+      --red:          #FF4D4D;
+      --red-dim:      rgba(255, 77, 77, 0.10);
+      --orange:       #FFA040;
+      --orange-dim:   rgba(255, 160, 64, 0.10);
+      --blue-dim:     rgba(99, 179, 237, 0.10);
+      --radius:       14px;
+      --radius-sm:    8px;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .logo-lockup { display: flex; align-items: center; gap: 14px; }
+
+    .logo-mark {
+      width: 44px; height: 44px;
+      background: var(--accent);
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark span { font-size: 17px; font-weight: 900; color: #0A0A0A; letter-spacing: -1px; }
+
+    .header-text h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; }
+    .header-text p  { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+
+    #last-updated { font-size: 13px; color: var(--text-sec); line-height: 1.6; text-align: right; }
+    #last-updated .dot {
+      display: inline-block; width: 7px; height: 7px;
+      border-radius: 50%; background: var(--accent);
+      margin-right: 6px;
+      animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Error banner ── */
+    #error-banner {
+      display: none;
+      background: rgba(255,77,77,.08);
+      border: 1px solid rgba(255,77,77,.3);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-size: 13px; color: var(--red);
+      margin-bottom: 24px;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 14px; margin-top: 36px;
+    }
+
+    /* ── Grid ── */
+    .grid { display: grid; gap: 16px; }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+    @media (max-width: 900px) {
+      .grid-3 { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 580px) {
+      .grid-3, .grid-2 { grid-template-columns: 1fr; }
+      header { flex-direction: column; }
+      #last-updated { text-align: left; }
+    }
+
+    /* ── Card base ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 22px 18px;
+      position: relative; overflow: hidden;
+      transition: border-color .2s, transform .15s;
+    }
+    .card:hover { border-color: #3A3A3A; transform: translateY(-1px); }
+
+    /* accent variant */
+    .card.hi {
+      border-color: rgba(200,241,53,.28);
+      background: linear-gradient(140deg, #141414 0%, #15190a 100%);
+    }
+    .card.hi::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at top right, var(--accent-glow) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    /* ── Card icon ── */
+    .card-icon {
+      width: 34px; height: 34px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; margin-bottom: 14px;
+    }
+    .icon-green  { background: var(--accent-dim); }
+    .icon-blue   { background: var(--blue-dim); }
+    .icon-red    { background: var(--red-dim); }
+    .icon-orange { background: var(--orange-dim); }
+
+    /* ── Card label ── */
+    .card-label {
+      font-size: 12px; font-weight: 500;
+      color: var(--text-sec); letter-spacing: .3px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Big number ── */
+    .card-value {
+      font-size: 52px; font-weight: 800;
+      letter-spacing: -3px; line-height: 1;
+      color: var(--text);
+    }
+    .card.hi .card-value { color: var(--accent); }
+
+    /* ── Sub-line: "X in last 4 weeks" ── */
+    .card-period {
+      font-size: 13px; color: var(--text-sec);
+      margin-top: 10px; line-height: 1.4;
+    }
+    .card-period strong { color: var(--text); font-weight: 600; }
+
+    /* ── Trend badge ── */
+    .trend {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 12px; font-weight: 600;
+      padding: 2px 8px; border-radius: 20px;
+      margin-left: 6px;
+    }
+    .trend.up   { background: rgba(200,241,53,.15); color: var(--accent); }
+    .trend.down { background: rgba(255,77,77,.12);  color: var(--red); }
+    .trend.flat { background: var(--surface-2); color: var(--text-muted); }
+
+    /* ── Sub-items (breakdown rows) ── */
+    .sub-items { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .sub-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2); border-radius: var(--radius-sm);
+      padding: 8px 12px; font-size: 13px;
+    }
+    .sub-item-label { color: var(--text-sec); }
+    .sub-item-value { font-weight: 700; color: var(--text); }
+
+    /* ── Shimmer skeleton ── */
+    .shimmer {
+      background: linear-gradient(90deg, var(--surface-2) 25%, #222 50%, var(--surface-2) 75%);
+      background-size: 200% 100%;
+      animation: shim 1.4s infinite;
+      border-radius: 6px; height: 52px; width: 90px;
+    }
+    @keyframes shim { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    .shimmer-sm {
+      display: inline-block;
+      background: linear-gradient(90deg, var(--surface-2) 25%, #222 50%, var(--surface-2) 75%);
+      background-size: 200% 100%;
+      animation: shim 1.4s infinite;
+      border-radius: 4px; height: 14px; width: 120px; vertical-align: middle;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 48px; padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    footer p { font-size: 12px; color: var(--text-muted); }
+    footer a  { color: var(--accent); text-decoration: none; }
+
+    .refresh-btn {
+      font-size: 12px; color: var(--text-sec);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 14px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .refresh-btn:hover { color: var(--accent); border-color: rgba(200,241,53,.4); }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header>
+    <div class="logo-lockup">
+      <div class="logo-mark"><span>UP</span></div>
+      <div class="header-text">
+        <h1>UPLVL Sales Dashboard</h1>
+        <p>Go High Level · UPLVL Sales Pipeline</p>
+      </div>
+    </div>
+    <div id="last-updated"><span class="dot"></span>Loading data…</div>
+  </header>
+
+  <div id="error-banner">⚠ Could not load dashboard data. Displaying last cached values if available.</div>
+
+  <!-- LEAD INTAKE -->
+  <div class="section-label">Lead Intake</div>
+  <div class="grid grid-3">
+
+    <div class="card">
+      <div class="card-icon icon-blue">📹</div>
+      <div class="card-label">VSL Form Submissions</div>
+      <div class="card-value" id="v-vsl-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-vsl-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-icon icon-blue">📄</div>
+      <div class="card-label">Contact Page Submissions</div>
+      <div class="card-value" id="v-contact-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-contact-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+    <div class="card hi">
+      <div class="card-icon icon-green">✅</div>
+      <div class="card-label">Total Qualified Leads</div>
+      <div class="card-value" id="v-qual-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-qual-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+  </div>
+
+  <!-- CALLS -->
+  <div class="section-label">Calls</div>
+  <div class="grid grid-3">
+
+    <div class="card">
+      <div class="card-icon icon-blue">📞</div>
+      <div class="card-label">Total Calls Booked</div>
+      <div class="card-value" id="v-booked-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-booked-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+    <div class="card hi">
+      <div class="card-icon icon-green">📅</div>
+      <div class="card-label">Upcoming Confirmed Calls</div>
+      <div class="card-value" id="v-upcoming"><span class="shimmer"></span></div>
+      <div class="card-period">Next 30 days · confirmed</div>
+    </div>
+
+    <div class="card">
+      <div class="card-icon icon-red">❌</div>
+      <div class="card-label">Canceled / Lost</div>
+      <div class="card-value" id="v-canceled-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-canceled-period"><span class="shimmer-sm"></span></div>
+      <div class="sub-items" id="v-canceled-breakdown">
+        <div class="sub-item">
+          <span class="sub-item-label">No Shows</span>
+          <span class="sub-item-value" id="v-noshows">—</span>
+        </div>
+        <div class="sub-item">
+          <span class="sub-item-label">Not a Fits</span>
+          <span class="sub-item-value" id="v-notafits">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PIPELINE -->
+  <div class="section-label">Pipeline</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-icon icon-orange">🔄</div>
+      <div class="card-label">Total Following Up</div>
+      <div class="card-value" id="v-followup"><span class="shimmer"></span></div>
+      <div class="card-period">Currently in Follow Up stage</div>
+    </div>
+
+    <div class="card hi">
+      <div class="card-icon icon-green">🏆</div>
+      <div class="card-label">Total Closed Sales</div>
+      <div class="card-value" id="v-closed-total"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-closed-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Data from <a href="https://app.gohighlevel.com" target="_blank" rel="noopener">Go High Level</a> · Auto-refreshes every 5 min</p>
+    <button class="refresh-btn" onclick="loadData()">↺ Refresh now</button>
+  </footer>
+
+</div>
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(n) {
+  return typeof n === 'number' ? n.toLocaleString() : '—';
+}
+
+function trendBadge(last, prior) {
+  if (typeof last !== 'number' || typeof prior !== 'number') return '';
+  if (prior === 0 && last === 0) return '<span class="trend flat">→ 0%</span>';
+  if (prior === 0) return '<span class="trend up">↑ new</span>';
+  const pct = Math.round(((last - prior) / prior) * 100);
+  if (pct > 0)  return `<span class="trend up">↑ ${pct}%</span>`;
+  if (pct < 0)  return `<span class="trend down">↓ ${Math.abs(pct)}%</span>`;
+  return '<span class="trend flat">→ 0%</span>';
+}
+
+function periodHTML(last, prior) {
+  return `<strong>${fmt(last)}</strong> in last 4 weeks ${trendBadge(last, prior)}`;
+}
+
+function setVal(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+function setTxt(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function render(d) {
+  // VSL submissions
+  setTxt('v-vsl-total',    fmt(d.vslSubmissions?.total));
+  setVal('v-vsl-period',   periodHTML(d.vslSubmissions?.last4Weeks, d.vslSubmissions?.prior4Weeks));
+
+  // Contact page submissions
+  setTxt('v-contact-total',   fmt(d.contactSubmissions?.total));
+  setVal('v-contact-period',  periodHTML(d.contactSubmissions?.last4Weeks, d.contactSubmissions?.prior4Weeks));
+
+  // Qualified leads
+  setTxt('v-qual-total',   fmt(d.qualifiedLeads?.total));
+  setVal('v-qual-period',  periodHTML(d.qualifiedLeads?.last4Weeks, d.qualifiedLeads?.prior4Weeks));
+
+  // Calls booked
+  setTxt('v-booked-total',   fmt(d.callsBooked?.total));
+  setVal('v-booked-period',  periodHTML(d.callsBooked?.last4Weeks, d.callsBooked?.prior4Weeks));
+
+  // Upcoming calls
+  setTxt('v-upcoming', fmt(d.upcomingCalls));
+
+  // Canceled: total = noShows + notAFits all-time
+  const canceledTotal = (d.noShows || 0) + (d.notAFits || 0);
+  setTxt('v-canceled-total',  fmt(canceledTotal));
+  setVal('v-canceled-period', periodHTML(d.canceledLast4Weeks, d.canceledPrior4Weeks));
+  setTxt('v-noshows',  fmt(d.noShows));
+  setTxt('v-notafits', fmt(d.notAFits));
+
+  // Following up
+  setTxt('v-followup', fmt(d.followingUp));
+
+  // Closed sales
+  setTxt('v-closed-total',   fmt(d.closedSales?.total));
+  setVal('v-closed-period',  periodHTML(d.closedSales?.last4Weeks, d.closedSales?.prior4Weeks));
+}
+
+// ── Last updated label ─────────────────────────────────────────────────────
+
+function setLastUpdated(iso) {
+  const el = document.getElementById('last-updated');
+  if (!iso) { el.innerHTML = '<span class="dot"></span>Last updated: unknown'; return; }
+  const date = new Date(iso);
+  const diff  = Date.now() - date;
+  const mins  = Math.floor(diff / 60000);
+  const ago   = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : mins < 60 ? `${mins} mins ago` : `${Math.floor(mins/60)}h ago`;
+  const stamp = date.toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  el.innerHTML = `<span class="dot"></span>Last updated: ${ago} <span style="color:var(--text-muted)">(${stamp})</span>`;
+}
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+
+async function loadData() {
+  document.getElementById('error-banner').style.display = 'none';
+  try {
+    const res = await fetch('data.json?_=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    render(data);
+    setLastUpdated(data.lastUpdated);
+  } catch (err) {
+    console.error('Dashboard load error:', err);
+    document.getElementById('error-banner').style.display = 'block';
+    setLastUpdated(null);
+  }
+}
+
+loadData();
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
