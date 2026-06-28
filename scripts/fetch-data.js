@@ -203,6 +203,10 @@ async function main() {
   const followUpOpps   = allOpps.filter((o) => stageName(o) === 'follow up');
   const closedOpps     = allOpps.filter((o) => stageName(o) === 'closed' && o.status === 'won');
   const lostOpps       = allOpps.filter((o) => o.status === 'lost');
+  // No shows and not a fits tracked as pipeline stages
+  const noShowStageOpps  = allOpps.filter((o) => stageName(o).includes('no-show') || stageName(o).includes('no show'));
+  const notAFitStageOpps = allOpps.filter((o) => stageName(o).includes('not a fit') || stageName(o).includes('declined'));
+  console.log(`  No-show stage: ${noShowStageOpps.length}, Not-a-fit stage: ${notAFitStageOpps.length}`);
 
   console.log(`  Call Booked: ${callBookedOpps.length}, Follow Up: ${followUpOpps.length}, Closed(won): ${closedOpps.length}, Lost: ${lostOpps.length}`);
 
@@ -222,9 +226,12 @@ async function main() {
   }
 
   const getLostReasonName = (o) => lostReasonMap[o.lostReasonId] || (o.lostReason || '').toLowerCase();
-  const noShows  = lostOpps.filter((o) => getLostReasonName(o).includes('no show'));
-  const notAFits = lostOpps.filter((o) => getLostReasonName(o).includes('not a fit'));
-  console.log(`  No Shows: ${noShows.length}, Not a Fits: ${notAFits.length}`);
+  const noShowsFromReason  = lostOpps.filter((o) => getLostReasonName(o).includes('no show'));
+  const notAFitsFromReason = lostOpps.filter((o) => getLostReasonName(o).includes('not a fit'));
+  // Combine stage-based and reason-based counts (deduplicated by using higher count)
+  const noShowsCount  = Math.max(noShowStageOpps.length,  noShowsFromReason.length);
+  const notAFitsCount = Math.max(notAFitStageOpps.length, notAFitsFromReason.length);
+  console.log(`  No Shows: ${noShowsCount}, Not a Fits: ${notAFitsCount}`);
 
   const canceledLast4Weeks  = lostOpps.filter((o) => inLast4Weeks(oppDateFn(o))).length;
   const canceledPrior4Weeks = lostOpps.filter((o) => inPrior4Weeks(oppDateFn(o))).length;
@@ -255,8 +262,8 @@ async function main() {
     qualifiedLeads:     qualifiedStats,
     callsBooked:        callsBookedStats,
     upcomingCalls,
-    noShows:            noShows.length,
-    notAFits:           notAFits.length,
+    noShows:            noShowsCount,
+    notAFits:           notAFitsCount,
     canceledLast4Weeks,
     canceledPrior4Weeks,
     followingUp,
