@@ -254,11 +254,23 @@
       <div class="card-period" id="v-contact-period"><span class="shimmer-sm"></span></div>
     </div>
 
+    <div class="card">
+      <div class="card-icon icon-blue">👥</div>
+      <div class="card-label">Total Leads</div>
+      <div class="card-value" id="v-total-leads"><span class="shimmer"></span></div>
+      <div class="card-period" id="v-total-leads-period"><span class="shimmer-sm"></span></div>
+    </div>
+
+  </div>
+
+  <div class="grid grid-3" style="margin-top:16px">
+
     <div class="card hi">
       <div class="card-icon icon-green">✅</div>
       <div class="card-label">Total Qualified Leads</div>
       <div class="card-value" id="v-qual-total"><span class="shimmer"></span></div>
       <div class="card-period" id="v-qual-period"><span class="shimmer-sm"></span></div>
+      <div class="card-period" style="margin-top:6px;font-size:12px;color:var(--text-muted)">VSL survey · not disqualified</div>
     </div>
 
   </div>
@@ -368,7 +380,11 @@ function render(d) {
   setTxt('v-contact-total',   fmt(d.contactSubmissions?.total));
   setVal('v-contact-period',  periodHTML(d.contactSubmissions?.last4Weeks, d.contactSubmissions?.prior4Weeks));
 
-  // Qualified leads
+  // Total leads (all submissions combined)
+  setTxt('v-total-leads',        fmt(d.totalLeads?.total));
+  setVal('v-total-leads-period', periodHTML(d.totalLeads?.last4Weeks, d.totalLeads?.prior4Weeks));
+
+  // Qualified leads (VSL only, not disqualified)
   setTxt('v-qual-total',   fmt(d.qualifiedLeads?.total));
   setVal('v-qual-period',  periodHTML(d.qualifiedLeads?.last4Weeks, d.qualifiedLeads?.prior4Weeks));
 
@@ -379,9 +395,8 @@ function render(d) {
   // Upcoming calls
   setTxt('v-upcoming', fmt(d.upcomingCalls));
 
-  // Canceled: total = noShows + notAFits all-time
-  const canceledTotal = (d.noShows || 0) + (d.notAFits || 0);
-  setTxt('v-canceled-total',  fmt(canceledTotal));
+  // Canceled: use total lost count
+  setTxt('v-canceled-total',  fmt(d.canceledTotal || (d.noShows || 0) + (d.notAFits || 0)));
   setVal('v-canceled-period', periodHTML(d.canceledLast4Weeks, d.canceledPrior4Weeks));
   setTxt('v-noshows',  fmt(d.noShows));
   setTxt('v-notafits', fmt(d.notAFits));
