@@ -172,9 +172,14 @@ async function main() {
   const allOpps = await fetchAllOpportunities();
   console.log(`  Total opps: ${allOpps.length}`);
 
-  // Log unique stage names to verify exact casing
+  // Log all keys and stage-related fields from first opp to find correct field name
+  if (allOpps.length > 0) {
+    const s = allOpps[0];
+    console.log(`  Opp keys: ${Object.keys(s).join(', ')}`);
+    console.log(`  Stage fields: pipelineStageName=${s.pipelineStageName}, pipeline_stage_name=${s.pipeline_stage_name}, stageId=${s.stageId}, pipelineStageId=${s.pipelineStageId}, stage=${s.stage}, name=${s.name}, status=${s.status}`);
+  }
   const stageNames = [...new Set(allOpps.map((o) => o.pipelineStageName || o.pipeline_stage_name || o.stageId || ''))];
-  console.log(`  Stage names found: ${JSON.stringify(stageNames)}`);
+  console.log(`  Stage names found: ${JSON.stringify(stageNames.slice(0, 10))}`);
 
   const stageName = (o) => (o.pipelineStageName || o.pipeline_stage_name || '').toLowerCase();
 
