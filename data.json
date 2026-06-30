@@ -1,9 +1,9 @@
 {
-  "lastUpdated": "2026-06-30T08:29:36.615Z",
+  "lastUpdated": "2026-06-30T11:30:34.039Z",
   "vslSubmissions": {
     "total": 146,
-    "last4Weeks": 140,
-    "prior4Weeks": 6
+    "last4Weeks": 138,
+    "prior4Weeks": 8
   },
   "contactSubmissions": {
     "total": 11,
@@ -12,8 +12,8 @@
   },
   "totalLeads": {
     "total": 157,
-    "last4Weeks": 150,
-    "prior4Weeks": 7
+    "last4Weeks": 148,
+    "prior4Weeks": 9
   },
   "qualifiedLeads": {
     "total": 0,
@@ -22,15 +22,15 @@
   },
   "callsBooked": {
     "total": 68,
-    "last4Weeks": 55,
-    "prior4Weeks": 10
+    "last4Weeks": 54,
+    "prior4Weeks": 11
   },
   "upcomingCalls": 0,
   "noShows": 10,
   "notAFits": 77,
   "canceledTotal": 88,
-  "canceledLast4Weeks": 61,
-  "canceledPrior4Weeks": 20,
+  "canceledLast4Weeks": 60,
+  "canceledPrior4Weeks": 21,
   "followingUp": 21,
   "closedSales": {
     "total": 2,
